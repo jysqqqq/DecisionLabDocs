@@ -6,8 +6,9 @@
   "type": "module",
   "packageManager": "pnpm@10.24.0",
   "scripts": {
-    "docs:dev": "vitepress dev docs",
-    "docs:build": "vitepress build docs",
+    "prepare:raw-docs": "node scripts/prepare-raw-docs.mjs",
+    "docs:dev": "pnpm prepare:raw-docs && vitepress dev docs",
+    "docs:build": "pnpm prepare:raw-docs && vitepress build docs",
     "docs:preview": "vitepress preview docs"
   },
   "devDependencies": {
