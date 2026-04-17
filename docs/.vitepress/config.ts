@@ -65,7 +65,7 @@ export default defineConfig({
     },
     footer: {
       message: "DecisionLab 文档站",
-      copyright: "MIT Licensed | Copyright (c) 2026 DecisionLabDocs Contributors"
+      copyright: "Copyright (c) 2026 DecisionLabDocs"
     },
     docFooter: {
       prev: "上一页",

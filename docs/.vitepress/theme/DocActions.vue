@@ -4,6 +4,10 @@ import { useData } from 'vitepress'
 
 const { page, frontmatter, site } = useData()
 const RAW_DOCS_DIR = '__raw'
+const rawDocLoaders = import.meta.glob('../../**/*.md', {
+  query: '?raw',
+  import: 'default'
+})
 
 // 复制状态
 const copyState = ref<'idle' | 'success' | 'error'>('idle')
@@ -60,6 +64,10 @@ function joinPosixPath(...segments: string[]) {
   return normalizePosixPath(segments.filter(Boolean).join('/'))
 }
 
+function getRawDocLoaderKey(relativePath: string) {
+  return `../../${normalizePosixPath(relativePath)}`
+}
+
 function getRawDocPath(relativePath: string) {
   return joinSitePath(normalizeSiteBase(site.value.base), RAW_DOCS_DIR, relativePath)
 }
@@ -113,6 +121,13 @@ function rewriteMarkdownAssetUrls(markdown: string, docRelativePath: string) {
 
 async function fetchMarkdown(): Promise<string> {
   const relativePath = page.value.relativePath
+  const loader = rawDocLoaders[getRawDocLoaderKey(relativePath)]
+
+  if (loader) {
+    const text = await loader()
+    if (typeof text === 'string') return text
+  }
+
   const targetPath = import.meta.env.DEV
     ? joinSitePath(normalizeSiteBase(site.value.base), relativePath)
     : getRawDocPath(relativePath)
@@ -122,22 +137,60 @@ async function fetchMarkdown(): Promise<string> {
   return res.text()
 }
 
+async function writeClipboardText(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // fallback to execCommand below
+    }
+  }
+
+  const textarea = document.createElement('textarea')
+  textarea.value = text
+  textarea.setAttribute('readonly', 'true')
+  textarea.style.position = 'fixed'
+  textarea.style.top = '-9999px'
+  textarea.style.left = '-9999px'
+
+  document.body.appendChild(textarea)
+  textarea.focus()
+  textarea.select()
+  textarea.setSelectionRange(0, textarea.value.length)
+
+  const copied = document.execCommand('copy')
+  document.body.removeChild(textarea)
+
+  if (!copied) throw new Error('复制失败')
+}
+
+function getVisibleDocText() {
+  const source = document.querySelector('.vp-doc') as HTMLElement | null
+  const clonedRoot = (source ?? document.body).cloneNode(true) as HTMLElement
+
+  clonedRoot.querySelectorAll('.header-anchor, .doc-actions, script, style').forEach((node) => {
+    node.remove()
+  })
+
+  return clonedRoot.innerText.trim()
+}
+
 async function copyContent() {
   if (copyTimer) clearTimeout(copyTimer)
   try {
-    const text = await fetchMarkdown()
-    await navigator.clipboard.writeText(text)
-    copyState.value = 'success'
-  } catch (e) {
-    // fallback：复制页面可见文字
+    let text: string
+
     try {
-      const docEl = document.querySelector('.vp-doc')
-      const text = docEl ? docEl.innerText : document.body.innerText
-      await navigator.clipboard.writeText(text)
-      copyState.value = 'success'
+      text = await fetchMarkdown()
     } catch {
-      copyState.value = 'error'
+      text = getVisibleDocText()
     }
+
+    await writeClipboardText(text)
+    copyState.value = 'success'
+  } catch {
+    copyState.value = 'error'
   }
   copyTimer = setTimeout(() => { copyState.value = 'idle' }, 2000)
 }
@@ -157,8 +210,7 @@ async function downloadMarkdown() {
     URL.revokeObjectURL(url)
   } catch (e) {
     // fallback：下载页面文本内容，仍然保持 .md 扩展名
-    const docEl = document.querySelector('.vp-doc')
-    const text = docEl ? docEl.innerText : document.body.innerText
+    const text = getVisibleDocText()
     const title = (frontmatter.value.title || document.title || 'document').replace(/\s+/g, '-')
     const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' })
     const url = URL.createObjectURL(blob)
